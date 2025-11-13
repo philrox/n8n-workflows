@@ -1,0 +1,606 @@
+{
+  "name": "SEO Intelligence Autopilot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seo-autopilot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 340],
+      "id": "webhook-input",
+      "name": "Webhook: URL Input",
+      "webhookId": "seo-autopilot-webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=🚀 SEO Analysis started for {{ $json.body.url }}\n\nYou'll receive a notification when the analysis is complete!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [460, 340],
+      "id": "respond-webhook",
+      "name": "Respond: Analysis Started"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract clean domain from URL input\nconst inputUrl = $input.item.json.body.url;\n\n// Remove protocol and trailing slashes\nlet domain = inputUrl\n  .replace(/^https?:\\/\\//, '')\n  .replace(/^www\\./, '')\n  .replace(/\\/.*$/, '')\n  .toLowerCase()\n  .trim();\n\n// Extract base domain (without subdomains except www)\nconst parts = domain.split('.');\nif (parts.length > 2) {\n  domain = parts.slice(-2).join('.');\n}\n\nreturn {\n  json: {\n    input_url: inputUrl,\n    domain: domain,\n    timestamp: new Date().toISOString(),\n    analysis_id: Date.now().toString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 340],
+      "id": "extract-domain",
+      "name": "Extract Domain"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.dataforseo.com/v3/dataforseo_labs/google/keywords_for_site/live",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "dataForSeoApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=0",
+              "value": "={{ \n{\n  \"target\": $json.domain,\n  \"location_code\": 2840,\n  \"language_code\": \"en\",\n  \"limit\": 50,\n  \"order_by\": [\"keyword_data.keyword_info.search_volume,desc\"],\n  \"filters\": [\n    [\"keyword_data.keyword_info.search_volume\", \">\", 10],\n    [\"ranked_serp_element.serp_item.rank_group\", \"<=\", 20]\n  ]\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 340],
+      "id": "get-site-keywords",
+      "name": "DataForSEO: Keywords For Site"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process DataForSEO response and extract top keywords\nconst response = $input.item.json;\n\n// Check if we have valid data\nif (!response.tasks || !response.tasks[0] || !response.tasks[0].result) {\n  return {\n    json: {\n      error: 'No keyword data found',\n      domain: $('Extract Domain').item.json.domain,\n      keywords: []\n    }\n  };\n}\n\nconst results = response.tasks[0].result || [];\n\n// Extract and format keywords\nconst keywords = results.slice(0, 20).map(item => {\n  const keywordInfo = item.keyword_data?.keyword_info || {};\n  const serpItem = item.ranked_serp_element?.serp_item || {};\n  \n  return {\n    keyword: item.keyword,\n    search_volume: keywordInfo.search_volume || 0,\n    competition: keywordInfo.competition || 0,\n    cpc: keywordInfo.cpc || 0,\n    position: serpItem.rank_group || 999,\n    url: serpItem.url || '',\n    estimated_traffic: Math.round((keywordInfo.search_volume || 0) * 0.3 / (serpItem.rank_group || 20))\n  };\n}).filter(k => k.search_volume > 0);\n\n// Get top 5 for SERP analysis\nconst top5Keywords = keywords.slice(0, 5).map(k => k.keyword);\n\n// Calculate some stats\nconst totalEstimatedTraffic = keywords.reduce((sum, k) => sum + k.estimated_traffic, 0);\nconst avgPosition = keywords.length > 0 \n  ? Math.round(keywords.reduce((sum, k) => sum + k.position, 0) / keywords.length * 10) / 10\n  : 0;\n\nreturn {\n  json: {\n    domain: $('Extract Domain').item.json.domain,\n    total_keywords_found: results.length,\n    top_keywords: keywords,\n    top_5_for_serp: top5Keywords,\n    stats: {\n      total_keywords_tracked: keywords.length,\n      avg_position: avgPosition,\n      estimated_monthly_traffic: totalEstimatedTraffic\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 340],
+      "id": "process-keywords",
+      "name": "Process Keywords Data"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "top_5_for_serp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1340, 340],
+      "id": "split-top-keywords",
+      "name": "Split Top 5 Keywords"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "dataForSeoApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=0",
+              "value": "={{ \n{\n  \"keyword\": $json.top_5_for_serp,\n  \"location_code\": 2840,\n  \"language_code\": \"en\",\n  \"device\": \"desktop\",\n  \"os\": \"windows\",\n  \"depth\": 10\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 340],
+      "id": "get-serp-data",
+      "name": "DataForSEO: SERP Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process SERP data to extract competitor domains\nconst allItems = $input.all();\nconst domainCount = {};\nconst serpFeatures = {};\nconst targetDomain = $('Extract Domain').item.json.domain;\n\nallItems.forEach(item => {\n  const response = item.json;\n  \n  if (!response.tasks || !response.tasks[0] || !response.tasks[0].result) {\n    return;\n  }\n  \n  const result = response.tasks[0].result[0];\n  const keyword = result.keyword;\n  \n  // Extract domains from organic results\n  const items = result.items || [];\n  items.forEach(serpItem => {\n    if (serpItem.type === 'organic') {\n      try {\n        const url = new URL(serpItem.url);\n        let domain = url.hostname.replace(/^www\\./, '');\n        \n        // Extract base domain\n        const parts = domain.split('.');\n        if (parts.length > 2) {\n          domain = parts.slice(-2).join('.');\n        }\n        \n        // Skip our own domain\n        if (domain !== targetDomain) {\n          domainCount[domain] = (domainCount[domain] || 0) + 1;\n        }\n      } catch (e) {\n        // Skip invalid URLs\n      }\n    }\n  });\n  \n  // Extract SERP features\n  if (!serpFeatures[keyword]) {\n    serpFeatures[keyword] = {\n      featured_snippet: null,\n      people_also_ask: [],\n      related_searches: []\n    };\n  }\n  \n  items.forEach(item => {\n    if (item.type === 'featured_snippet') {\n      serpFeatures[keyword].featured_snippet = item.description || item.text;\n    }\n    if (item.type === 'people_also_ask') {\n      item.items?.forEach(q => {\n        if (q.title) serpFeatures[keyword].people_also_ask.push(q.title);\n      });\n    }\n    if (item.type === 'related_searches') {\n      item.items?.forEach(s => {\n        if (s.title) serpFeatures[keyword].related_searches.push(s.title);\n      });\n    }\n  });\n});\n\n// Sort competitors by frequency\nconst competitors = Object.entries(domainCount)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 5)\n  .map(([domain, count]) => ({\n    domain,\n    appearances: count,\n    relevance_score: Math.round((count / allItems.length) * 100)\n  }));\n\nreturn {\n  json: {\n    target_domain: targetDomain,\n    competitors_found: competitors,\n    top_competitor: competitors[0]?.domain || null,\n    serp_features: serpFeatures,\n    analysis_metadata: {\n      keywords_analyzed: allItems.length,\n      total_serp_positions_checked: allItems.length * 10\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 340],
+      "id": "analyze-competitors",
+      "name": "Analyze Competitors & SERP"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "domain",
+              "name": "domain",
+              "value": "={{ $('Extract Domain').item.json.domain }}",
+              "type": "string"
+            },
+            {
+              "id": "keywords",
+              "name": "current_keywords",
+              "value": "={{ $('Process Keywords Data').item.json.top_keywords }}",
+              "type": "object"
+            },
+            {
+              "id": "stats",
+              "name": "current_stats",
+              "value": "={{ $('Process Keywords Data').item.json.stats }}",
+              "type": "object"
+            },
+            {
+              "id": "competitors",
+              "name": "competitors",
+              "value": "={{ $json.competitors_found }}",
+              "type": "object"
+            },
+            {
+              "id": "serp",
+              "name": "serp_features",
+              "value": "={{ $json.serp_features }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 340],
+      "id": "merge-data",
+      "name": "Merge Analysis Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.dataforseo.com/v3/dataforseo_labs/google/keywords_for_site/live",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "dataForSeoApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=0",
+              "value": "={{ \n{\n  \"target\": $('Analyze Competitors & SERP').item.json.top_competitor,\n  \"location_code\": 2840,\n  \"language_code\": \"en\",\n  \"limit\": 30,\n  \"order_by\": [\"keyword_data.keyword_info.search_volume,desc\"],\n  \"filters\": [\n    [\"keyword_data.keyword_info.search_volume\", \">\", 50],\n    [\"ranked_serp_element.serp_item.rank_group\", \"<=\", 10]\n  ]\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 520],
+      "id": "get-competitor-keywords",
+      "name": "DataForSEO: Competitor Keywords",
+      "disabled": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process competitor keywords\nconst response = $input.item.json;\nconst targetKeywords = $('Merge Analysis Data').item.json.current_keywords.map(k => k.keyword.toLowerCase());\n\nif (!response.tasks || !response.tasks[0] || !response.tasks[0].result) {\n  return {\n    json: {\n      competitor_domain: $('Analyze Competitors & SERP').item.json.top_competitor,\n      keywords: [],\n      gaps: []\n    }\n  };\n}\n\nconst results = response.tasks[0].result || [];\n\n// Extract competitor keywords\nconst competitorKeywords = results.map(item => {\n  const keywordInfo = item.keyword_data?.keyword_info || {};\n  const serpItem = item.ranked_serp_element?.serp_item || {};\n  \n  return {\n    keyword: item.keyword,\n    search_volume: keywordInfo.search_volume || 0,\n    competition: keywordInfo.competition || 0,\n    cpc: keywordInfo.cpc || 0,\n    competitor_position: serpItem.rank_group || 999\n  };\n});\n\n// Find keyword gaps (keywords competitor ranks for but we don't)\nconst gaps = competitorKeywords\n  .filter(ck => !targetKeywords.includes(ck.keyword.toLowerCase()))\n  .filter(ck => ck.search_volume >= 100)\n  .slice(0, 20)\n  .map(k => ({\n    ...k,\n    opportunity_score: Math.round(k.search_volume / Math.max(k.competition * 100, 1))\n  }));\n\nreturn {\n  json: {\n    competitor_domain: $('Analyze Competitors & SERP').item.json.top_competitor,\n    competitor_keywords: competitorKeywords,\n    keyword_gaps: gaps.sort((a, b) => b.opportunity_score - a.opportunity_score)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 520],
+      "id": "process-competitor-data",
+      "name": "Process Competitor Data"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [2660, 340],
+      "id": "merge-all",
+      "name": "Merge All Data"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "messageText",
+        "messageText": "={{ $json.analysis_output }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatAnthropic",
+      "typeVersion": 1.8,
+      "position": [2880, 340],
+      "id": "claude-analysis",
+      "name": "Claude: Strategic Analysis",
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-credentials",
+          "name": "Anthropic Claude API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare comprehensive analysis prompt for Claude\nconst data = $input.item.json;\n\nconst prompt = `# SEO Strategy Analysis Request\n\nYou are an expert SEO strategist creating a comprehensive, actionable report for a small business owner or solopreneur.\n\n## Target Website\nDomain: ${data.domain}\n\n## Current Performance\n### Ranking Keywords (Top 20):\n${JSON.stringify(data.current_keywords, null, 2)}\n\n### Performance Stats:\n- Total Keywords Ranking: ${data.current_stats.total_keywords_tracked}\n- Average Position: ${data.current_stats.avg_position}\n- Estimated Monthly Traffic: ${data.current_stats.estimated_monthly_traffic} visitors\n\n## Competitor Intelligence\n### Main Competitors Found:\n${JSON.stringify(data.competitors, null, 2)}\n\n### Top Competitor (${data.competitor_keywords?.competitor_domain || 'N/A'}):\nTheir Top Keywords:\n${JSON.stringify(data.competitor_keywords?.competitor_keywords?.slice(0, 10) || [], null, 2)}\n\n### Keyword Gaps (Opportunities):\n${JSON.stringify(data.keyword_gaps?.slice(0, 15) || [], null, 2)}\n\n## SERP Features Detected:\n${JSON.stringify(data.serp_features, null, 2)}\n\n---\n\n# Your Task:\n\nCreate a comprehensive, easy-to-understand SEO strategy report with the following sections:\n\n## 1. Executive Summary (2-3 sentences)\nSummarize the current SEO situation and the biggest opportunity.\n\n## 2. Current Performance Overview\n- Brief assessment of current rankings\n- Key strengths to maintain\n- Main areas needing improvement\n\n## 3. Competitor Analysis\n- Who are the main competitors in the SERP?\n- What are they doing well?\n- Where can we differentiate?\n\n## 4. Top 10 Opportunity Keywords\nCreate a table with these columns:\n| Keyword | Search Volume | Difficulty | Opportunity Score | Why This Matters | Recommended Action |\n\nFocus on \"Quick Win\" keywords where:\n- Search volume is meaningful (100+)\n- Competition is manageable\n- Clear content gap exists\n\n## 5. Content Strategy Recommendations\nProvide 3-5 specific content ideas with:\n- **Title suggestion**\n- **Target keyword cluster**\n- **Content outline** (H2 headings)\n- **Key questions to answer** (from People Also Ask)\n- **Estimated word count**\n- **Priority** (High/Medium/Low)\n\n## 6. SERP Features Strategy\nBased on the SERP features found:\n- Which features should we target? (Featured Snippets, PAA, etc.)\n- Specific recommendations to capture these features\n\n## 7. Next Steps - Action Checklist\nProvide 5-10 concrete, prioritized action items that a non-SEO-expert can execute.\n\nFormat as:\n- [ ] Action item with clear instructions\n\n## 8. Estimated Impact\n- Projected traffic increase (conservative estimate)\n- Timeline for results (realistic expectations)\n\n---\n\n**Important Guidelines:**\n- Write in clear, jargon-free language\n- Focus on actionable, specific recommendations\n- Prioritize quick wins that don't require huge resources\n- Be realistic about competition and timelines\n- Use the actual data provided (don't make up numbers)\n- Format in clean Markdown for easy reading\n`;\n\nreturn {\n  json: {\n    analysis_output: prompt,\n    raw_data: data\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 180],
+      "id": "prepare-claude-prompt",
+      "name": "Prepare Analysis Prompt"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "create",
+        "title": "=SEO Strategy Report - {{ $('Extract Domain').item.json.domain }} - {{ $today.format('YYYY-MM-DD') }}",
+        "bodyContent": "={{ $json.response }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 1,
+      "position": [3320, 240],
+      "id": "create-google-doc",
+      "name": "Google Docs: Create Report",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "google-docs-oauth",
+          "name": "Google Docs OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": "gid=0",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [3320, 440],
+      "id": "update-google-sheet",
+      "name": "Google Sheets: Update Tracker",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "CHANNEL_ID",
+          "mode": "list"
+        },
+        "text": "=✅ SEO Analysis Complete!\n\n**Domain:** {{ $('Extract Domain').item.json.domain }}\n**Keywords Found:** {{ $('Process Keywords Data').item.json.stats.total_keywords_tracked }}\n**Top Competitor:** {{ $('Analyze Competitors & SERP').item.json.top_competitor }}\n**Opportunities Found:** {{ $('Process Competitor Data').item.json.keyword_gaps.length }}\n\n📄 **Report:** [View Google Doc]({{ $('Google Docs: Create Report').item.json.documentUrl }})\n📊 **Data:** Check Google Sheets\n\n🎯 Next: Review the recommendations and start with High Priority items!",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [3540, 340],
+      "id": "send-notification",
+      "name": "Slack: Completion Notification",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🎯 INPUT\nSimplified: Only URL needed!",
+        "height": 280,
+        "width": 240,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 220],
+      "id": "note-input",
+      "name": "Note: Input"
+    },
+    {
+      "parameters": {
+        "content": "## 🔍 DISCOVERY\nAuto-detect keywords & competitors",
+        "height": 280,
+        "width": 880,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [620, 220],
+      "id": "note-discovery",
+      "name": "Note: Discovery"
+    },
+    {
+      "parameters": {
+        "content": "## 🎭 SERP INTELLIGENCE\nAnalyze search results & features",
+        "height": 280,
+        "width": 460,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1520, 220],
+      "id": "note-serp",
+      "name": "Note: SERP"
+    },
+    {
+      "parameters": {
+        "content": "## 💎 GAP ANALYSIS\nFind opportunities",
+        "height": 380,
+        "width": 460,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2160, 420],
+      "id": "note-gaps",
+      "name": "Note: Gaps"
+    },
+    {
+      "parameters": {
+        "content": "## 🧠 AI STRATEGY\nClaude Sonnet-4.5 Analysis",
+        "height": 280,
+        "width": 240,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2820, 60],
+      "id": "note-ai",
+      "name": "Note: AI"
+    },
+    {
+      "parameters": {
+        "content": "## 📤 OUTPUT\nGoogle Docs + Sheets + Notification",
+        "height": 380,
+        "width": 460,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3260, 140],
+      "id": "note-output",
+      "name": "Note: Output"
+    },
+    {
+      "parameters": {
+        "content": "# 🚀 SEO INTELLIGENCE AUTOPILOT\n**1-Click Website Analysis powered by AI**",
+        "height": 100,
+        "width": 1200,
+        "color": 1
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 60],
+      "id": "note-title",
+      "name": "Note: Title"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook: URL Input": {
+      "main": [
+        [
+          {
+            "node": "Respond: Analysis Started",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Domain": {
+      "main": [
+        [
+          {
+            "node": "DataForSEO: Keywords For Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DataForSEO: Keywords For Site": {
+      "main": [
+        [
+          {
+            "node": "Process Keywords Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Keywords Data": {
+      "main": [
+        [
+          {
+            "node": "Split Top 5 Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Top 5 Keywords": {
+      "main": [
+        [
+          {
+            "node": "DataForSEO: SERP Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DataForSEO: SERP Analysis": {
+      "main": [
+        [
+          {
+            "node": "Analyze Competitors & SERP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Competitors & SERP": {
+      "main": [
+        [
+          {
+            "node": "Merge Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Analysis Data": {
+      "main": [
+        [
+          {
+            "node": "DataForSEO: Competitor Keywords",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DataForSEO: Competitor Keywords": {
+      "main": [
+        [
+          {
+            "node": "Process Competitor Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Competitor Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Analysis Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude: Strategic Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Strategic Analysis": {
+      "main": [
+        [
+          {
+            "node": "Google Docs: Create Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Sheets: Update Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Docs: Create Report": {
+      "main": [
+        [
+          {
+            "node": "Slack: Completion Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets: Update Tracker": {
+      "main": [
+        [
+          {
+            "node": "Slack: Completion Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "new-version",
+  "meta": {
+    "instanceId": "n8n-seo-autopilot"
+  },
+  "id": "seo-intelligence-autopilot",
+  "tags": [
+    {
+      "id": "seo",
+      "name": "seo"
+    },
+    {
+      "id": "automation",
+      "name": "automation"
+    },
+    {
+      "id": "ai",
+      "name": "ai"
+    }
+  ]
+}
