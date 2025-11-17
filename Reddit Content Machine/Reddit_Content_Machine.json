@@ -431,115 +431,227 @@
     },
     {
       "parameters": {
-        "content": "# Reddit Content Machine\n\n## Workflow Overview\nThis workflow automatically mines Reddit discussions to generate content ideas:\n1. Configure target subreddits and quality thresholds\n2. Fetch top posts from each subreddit\n3. Filter by engagement (score + comments)\n4. Analyze with Claude AI\n5. Save structured content ideas to Airtable\n\n## Setup Required\n- Anthropic API key (Claude)\n- Airtable Personal Access Token\n- Airtable Base & Table configured\n\n## Configuration\nEdit the Config node to customize:\n- subreddits: List of subreddits (one per line)\n- minScore: Minimum upvotes (default: 50)\n- minComments: Minimum comments (default: 10)\n- postsPerSubreddit: Posts to fetch (default: 25)\n- timeRange: week/month/year/all",
-        "height": 780,
-        "width": 480,
+        "content": "# 🤖 Reddit Content Machine\n\n## What This Workflow Does\n\nAutomatically mines Reddit discussions and transforms them into actionable content ideas using Claude AI.\n\n**Input:** Subreddit names + quality thresholds\n**Output:** 90-150 structured content ideas per month\n**Runtime:** ~3.5 minutes for 3 subreddits\n**Cost:** ~$6/month (Claude API)\n\n## Workflow Steps\n\n1. **Configure** → Set subreddits and filters\n2. **Loop** → Process each subreddit\n3. **Fetch** → Get top posts from Reddit\n4. **Filter** → Remove low-engagement posts\n5. **Extract** → Flatten post data structure\n6. **Enrich** → Fetch top 5 comments\n7. **Analyze** → Claude extracts insights\n8. **Format** → Structure for Airtable\n9. **Save** → Store content ideas\n\n## Quick Setup\n\n1. Add Anthropic API credential (x-api-key)\n2. Add Airtable credential (Personal Access Token)\n3. Create Airtable base with schema from README\n4. Update Reddit User-Agent in \"Fetch Reddit Posts\"\n5. Configure subreddits in \"Config\" node\n6. Test with Manual Trigger\n7. Activate Schedule Trigger for daily runs",
+        "height": 900,
+        "width": 520,
         "color": 4
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        40,
-        100
+        -60,
+        60
       ],
       "id": "sticky-note-overview",
       "name": "Sticky Note - Overview"
     },
     {
       "parameters": {
-        "content": "## Triggers\n\n**Manual:** Test runs\n**Schedule:** Daily at 9am",
-        "height": 280,
-        "width": 280,
+        "content": "## ⚡ Triggers\n\n**Manual Trigger**\n- Use for testing\n- Click \"Execute Workflow\"\n- Good for debugging\n\n**Schedule Trigger**\n- Runs daily at 9:00 AM\n- Cron: `0 9 * * *`\n- Timezone: Your n8n instance timezone\n\n**Customize Schedule:**\n- Every Monday: `0 9 * * 1`\n- Twice daily: `0 9,15 * * *`\n- Weekly: `0 9 * * 0`",
+        "height": 380,
+        "width": 320,
         "color": 5
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         80,
-        220
+        180
       ],
       "id": "sticky-note-triggers",
       "name": "Sticky Note - Triggers"
     },
     {
       "parameters": {
-        "content": "## Config & Loop\n\nConfigure subreddits and parameters, then loop through each subreddit",
-        "height": 220,
-        "width": 520,
-        "color": 5
+        "content": "## ⚙️ Configuration\n\n**Edit this node to customize:**\n\n**subreddits** (string)\n- One per line\n- No \"r/\" prefix\n- Example: \"hyrox\\ncrossfit\\nrunning\"\n\n**minScore** (number)\n- Minimum upvotes\n- Default: 50\n- Niche subs: 20-30\n- Large subs: 100+\n\n**minComments** (number)\n- Minimum comment count\n- Default: 10\n- More comments = better discussion\n\n**postsPerSubreddit** (number)\n- Posts to fetch per subreddit\n- Default: 25\n- Max recommended: 50\n\n**timeRange** (string)\n- Options: day, week, month, year, all\n- Default: \"week\"\n- Most used: week or month",
+        "height": 640,
+        "width": 400,
+        "color": 6
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        320,
-        260
+        300,
+        -60
       ],
       "id": "sticky-note-config",
       "name": "Sticky Note - Config"
     },
     {
       "parameters": {
-        "content": "## Fetch & Filter\n\nFetch Reddit posts, split into individual items, and filter by engagement metrics",
-        "height": 220,
-        "width": 700,
+        "content": "## 🔄 Loop Setup\n\n**Split Subreddits** (Code)\n- Converts newline-separated string to array\n- Carries forward all config parameters\n- Output: 1 item per subreddit\n\n**Loop Subreddits** (Split in Batches)\n- Batch size: 1 (process one at a time)\n- Prevents rate limiting\n- Has loop-back connection to itself\n- Output 1: Next subreddit\n- Output 2: Loop complete (goes back to start)",
+        "height": 340,
+        "width": 380,
         "color": 5
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        980,
-        260
+        540,
+        220
       ],
-      "id": "sticky-note-fetch",
-      "name": "Sticky Note - Fetch"
+      "id": "sticky-note-loop",
+      "name": "Sticky Note - Loop"
     },
     {
       "parameters": {
-        "content": "## Extract & Enrich\n\nExtract post data, fetch top comments for additional context",
-        "height": 220,
-        "width": 520,
-        "color": 5
+        "content": "## 📡 Reddit API - Fetch Posts\n\n**Endpoint:** `reddit.com/r/{subreddit}/top.json`\n\n**Query Parameters:**\n- t: timeRange (week/month/year)\n- limit: postsPerSubreddit (25)\n\n**Headers:**\n- User-Agent: REQUIRED by Reddit\n- Format: \"app-name/version (by /u/username)\"\n- ⚠️ UPDATE THIS with your Reddit username!\n\n**Response Structure:**\n```\n{\n  data: {\n    children: [\n      { data: { title, score, num_comments, ... } }\n    ]\n  }\n}\n```\n\n**Rate Limits:**\n- 60 requests/minute\n- Workflow respects this with sequential processing\n\n**No Auth Required:**\n- Uses public JSON endpoints\n- No Reddit API key needed",
+        "height": 560,
+        "width": 420,
+        "color": 6
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1640,
-        260
+        960,
+        -80
       ],
-      "id": "sticky-note-extract",
-      "name": "Sticky Note - Extract"
+      "id": "sticky-note-reddit-api",
+      "name": "Sticky Note - Reddit API"
     },
     {
       "parameters": {
-        "content": "## AI Analysis\n\nClaude analyzes the discussion and generates structured content ideas with pain points, angles, and urgency scores",
-        "height": 220,
-        "width": 300,
+        "content": "## 🎯 Filter & Extract\n\n**Split Posts**\n- Splits \"data.children\" array\n- 1 item per Reddit post\n- Typically 25 items per subreddit\n\n**Filter Engagement**\n- Removes low-quality posts\n- Condition 1: score >= minScore (AND)\n- Condition 2: num_comments >= minComments\n- Expected reduction: 50-70%\n- Only high-engagement posts continue\n\n**Extract Post Data**\n- Flattens Reddit's nested structure\n- Extracts: title, score, numComments, url, permalink, body, subreddit, created\n- Converts Unix timestamp to ISO date\n- ⚠️ This data is referenced later by Process Comments node",
+        "height": 480,
+        "width": 380,
         "color": 5
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2300,
-        260
+        1200,
+        -80
       ],
-      "id": "sticky-note-analysis",
-      "name": "Sticky Note - Analysis"
+      "id": "sticky-note-filter",
+      "name": "Sticky Note - Filter"
     },
     {
       "parameters": {
-        "content": "## Save Results\n\nFormat and save content ideas to Airtable for review and content planning",
-        "height": 220,
-        "width": 300,
-        "color": 5
+        "content": "## 💬 Comments Processing\n\n**Fetch Comments** (HTTP Request)\n- Endpoint: `{permalink}.json?limit=5`\n- Gets top 5 comments for context\n- continueOnFail: true (won't break workflow)\n- Retry: 3 times with 1s delay\n- ⚠️ User-Agent required here too!\n\n**Reddit Comment Response:**\n```\n[\n  [0] = post data (ignored)\n  [1] = { data: { children: [comments] } }\n]\n```\n\n**Process Comments** (Code)\n- Retrieves post data from \"Extract Post Data\" node\n- Uses: $('Extract Post Data').item.json\n- ⚠️ IMPORTANT: This prevents data loss!\n- HTTP requests replace item data\n- So we fetch the original post data again\n- Extracts top 5 comments\n- Formats for Claude: \"Comment 1 (score): body\"\n- Merges post data + comments into single object\n- Output includes: title, score, body, commentsText",
+        "height": 580,
+        "width": 500,
+        "color": 6
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2620,
-        260
+        1620,
+        -100
       ],
-      "id": "sticky-note-save",
-      "name": "Sticky Note - Save"
+      "id": "sticky-note-comments",
+      "name": "Sticky Note - Comments"
+    },
+    {
+      "parameters": {
+        "content": "## 🧠 Claude AI Analysis\n\n**Model:** claude-sonnet-4-20250514\n**Temperature:** 0.3 (more consistent)\n**Max Tokens:** 1000\n\n**Prompt Structure:**\n- Post metadata (title, subreddit, score, comments)\n- Post body text\n- Top 5 comments\n- Instructions to extract in JSON format\n\n**Expected Output:**\n```json\n{\n  \"mainProblem\": \"Core pain point\",\n  \"contentIdeas\": [\n    {\n      \"title\": \"Content Title\",\n      \"format\": \"Blog/Video/Social/Thread\",\n      \"angle\": \"Unique perspective\",\n      \"hook\": \"Attention hook\"\n    }\n  ],\n  \"searchIntent\": \"Informational/Commercial/Transactional\",\n  \"emotionalTriggers\": [\"Frustration\", \"FOMO\"],\n  \"targetAudience\": \"Who is affected?\",\n  \"urgency\": 8\n}\n```\n\n**Typical Output:**\n- 3-5 content ideas per post\n- Each idea is unique\n- Urgency score: 1-10\n\n**Cost:** ~$0.003 per post\n**Daily Cost (3 subs, 10 posts):** ~$0.20\n**Monthly Cost:** ~$6",
+        "height": 700,
+        "width": 460,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        -140
+      ],
+      "id": "sticky-note-claude",
+      "name": "Sticky Note - Claude"
+    },
+    {
+      "parameters": {
+        "content": "## 📊 Format & Save\n\n**Format Output** (Code)\n- Retrieves post data from \"Process Comments\"\n- Uses: $('Process Comments').item.json\n- Parses Claude's JSON response\n- Removes markdown code blocks (```json)\n- Error handling: Creates default if parsing fails\n- **Multiplies items:** 1 post → 3-5 content ideas\n- Each content idea becomes separate Airtable record\n\n**Save to Airtable**\n- Operation: Create records\n- Typecast: true (auto-converts types)\n- Maps 16 fields to Airtable columns\n\n**Airtable Fields:**\n- Content Title, Format, Angle, Hook\n- Main Problem, Search Intent\n- Emotional Triggers, Target Audience\n- Urgency (1-10)\n- Source URL, Source Title, Subreddit\n- Engagement Score, Comments\n- Status (Todo), Created\n\n**Expected Output:**\n- 3 subs × 25 posts = 75 posts fetched\n- ~30 posts after filtering (40%)\n- ~30 × 3.5 ideas = 105 content ideas\n- Runtime: ~3.5 minutes",
+        "height": 660,
+        "width": 480,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2480,
+        -120
+      ],
+      "id": "sticky-note-output",
+      "name": "Sticky Note - Output"
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ Common Issues & Fixes\n\n**No Results / All Posts Filtered Out**\n→ Lower minScore to 20-30\n→ Lower minComments to 5\n→ Change timeRange to \"month\"\n\n**Rate Limit Error (429)**\n→ Reduce postsPerSubreddit to 15\n→ Use fewer subreddits (<5)\n→ Already handled with sequential processing\n\n**User-Agent Error**\n→ Update both HTTP Request nodes\n→ Format: \"app/1.0 (by /u/YOUR_USERNAME)\"\n→ Reddit requires this!\n\n**Claude JSON Parse Error**\n→ Check execution log for raw response\n→ Fallback creates default structure\n→ Usually works on retry\n\n**Airtable Field Validation Error**\n→ Check field names match exactly\n→ \"typecast: true\" handles most issues\n→ Create missing single-select options\n\n**Workflow Timeout**\n→ Reduce postsPerSubreddit\n→ Or split into multiple workflows\n\n**Comments Fetch Fails**\n→ Workflow continues (continueOnFail: true)\n→ Uses \"No comments available\"\n→ Claude still analyzes the post",
+        "height": 760,
+        "width": 480,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        1020
+      ],
+      "id": "sticky-note-troubleshooting",
+      "name": "Sticky Note - Troubleshooting"
+    },
+    {
+      "parameters": {
+        "content": "## 💡 Optimization Tips\n\n**Reduce Costs:**\n- Increase minScore/minComments (fewer posts to analyze)\n- Run less frequently (weekly instead of daily)\n- Use smaller postsPerSubreddit value\n\n**Improve Quality:**\n- Focus on niche subreddits\n- Higher minComments for better discussions\n- Use \"month\" or \"year\" for evergreen content\n\n**Speed Up:**\n- Currently optimized (sequential to avoid rate limits)\n- Could batch Claude requests in future\n- Could skip comment fetching for faster runs\n\n**Get More Ideas:**\n- Lower thresholds (more posts)\n- Add more subreddits\n- Increase postsPerSubreddit\n- Claude typically gives 3-5 ideas per post\n\n**Scale to 10+ Subreddits:**\n- Clone this workflow\n- Different subreddit list per workflow\n- Stagger schedules (9am, 10am, 11am)\n- Prevents rate limiting\n- All save to same Airtable base",
+        "height": 640,
+        "width": 440,
+        "color": 1
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        1020
+      ],
+      "id": "sticky-note-optimization",
+      "name": "Sticky Note - Optimization"
+    },
+    {
+      "parameters": {
+        "content": "## 🔐 Required Credentials\n\n**1. Anthropic API (Claude)**\n- Type: HTTP Header Auth\n- Header Name: `x-api-key`\n- Header Value: Your Anthropic API key\n- Get key: console.anthropic.com\n- Free tier: $5 credit\n- Cost: ~$0.003 per post\n\n**2. Airtable**\n- Type: Airtable Token API\n- Token: Personal Access Token\n- Get token: airtable.com/create/tokens\n- Scopes needed: data.records:write\n- Base: Select your content ideas base\n- Table: Select your table\n\n**3. Reddit (No Credential Needed!)**\n- Just update User-Agent in HTTP nodes\n- Format: \"app-name/1.0 (by /u/username)\"\n- Uses public JSON endpoints\n- No OAuth required",
+        "height": 580,
+        "width": 400,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        940,
+        1020
+      ],
+      "id": "sticky-note-credentials",
+      "name": "Sticky Note - Credentials"
+    },
+    {
+      "parameters": {
+        "content": "## 📈 Expected Performance\n\n**Small (1-3 subreddits)**\n- Posts fetched: 25 × 3 = 75\n- After filter (40%): ~30 posts\n- Ideas generated: ~105 (3.5 per post)\n- Runtime: 3-5 minutes\n- Cost per run: $0.20\n- Daily cost: $0.20\n- Monthly cost: $6\n\n**Medium (4-7 subreddits)**\n- Posts fetched: 25 × 5 = 125\n- After filter: ~50 posts\n- Ideas generated: ~175\n- Runtime: 7-10 minutes\n- Cost per run: $0.40\n- Monthly cost: $12\n\n**Large (8-10 subreddits)**\n- Reduce postsPerSubreddit to 15\n- Posts fetched: 15 × 10 = 150\n- After filter: ~60 posts\n- Ideas generated: ~210\n- Runtime: 15-20 minutes\n- Cost per run: $0.50\n- Monthly cost: $15\n\n**ROI Calculation:**\n- Time saved: 40 hours/month\n- Value at $50/hr: $2,000\n- Cost: $6-15/month\n- ROI: 133x - 333x",
+        "height": 720,
+        "width": 460,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        1020
+      ],
+      "id": "sticky-note-performance",
+      "name": "Sticky Note - Performance"
+    },
+    {
+      "parameters": {
+        "content": "## 🎯 Data Flow Diagram\n\n```\nTrigger\n  ↓\nConfig (1 item)\n  ↓ [subreddits string]\nSplit Subreddits (3 items)\n  ↓ [array of subreddits]\nLoop Subreddits (1 item at a time)\n  ↓ [current subreddit + config]\nFetch Reddit Posts (1 item)\n  ↓ [Reddit API response]\nSplit Posts (25 items)\n  ↓ [individual posts]\nFilter Engagement (10 items)\n  ↓ [only high-engagement posts]\nExtract Post Data (10 items)\n  ↓ [flattened post structure]\nFetch Comments (10 items)\n  ↓ [Reddit comments API response]\nProcess Comments (10 items)\n  ↓ [post data + formatted comments]\nClaude Analysis (10 items)\n  ↓ [AI-generated insights]\nFormat Output (35 items)\n  ↓ [1 post → 3.5 ideas]\nSave to Airtable (35 items)\n  ↓ [Airtable records created]\nComplete ✓\n```\n\n**Key Points:**\n- Items multiply at \"Format Output\"\n- Loop processes each subreddit sequentially\n- Filter reduces ~60% of posts\n- Each post generates 3-5 content ideas",
+        "height": 840,
+        "width": 460,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        1020
+      ],
+      "id": "sticky-note-dataflow",
+      "name": "Sticky Note - Data Flow"
     }
   ],
   "pinData": {},
@@ -699,7 +811,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "reddit-content-machine-v1.1",
+  "versionId": "reddit-content-machine-v1.2",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "reddit-content-machine-instance"
