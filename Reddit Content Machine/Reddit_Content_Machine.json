@@ -17,7 +17,8 @@
         "rule": {
           "interval": [
             {
-              "cronExpression": "0 9 * * *"
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
             }
           ]
         }
@@ -33,8 +34,6 @@
     },
     {
       "parameters": {
-        "mode": "manual",
-        "duplicateItem": false,
         "assignments": {
           "assignments": [
             {
@@ -203,8 +202,6 @@
     },
     {
       "parameters": {
-        "mode": "manual",
-        "duplicateItem": false,
         "assignments": {
           "assignments": [
             {
@@ -296,6 +293,13 @@
           "retry": {
             "maxTries": 3,
             "waitBetweenTries": 1000
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json",
+              "fullResponse": false
+            }
           }
         }
       },
@@ -306,11 +310,12 @@
         400
       ],
       "id": "fetch-comments-1",
-      "name": "Fetch Comments"
+      "name": "Fetch Comments",
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "// Extract top comments from Reddit API response\nconst commentData = $input.item.json;\nconst postData = $input.item.json;\n\nlet topComments = [];\n\ntry {\n  // Reddit returns array: [0] = post, [1] = comments\n  if (Array.isArray(commentData) && commentData[1]) {\n    topComments = commentData[1].data.children\n      .filter(c => c.data && c.data.body && c.kind === 't1')\n      .slice(0, 5)\n      .map(c => ({\n        body: c.data.body,\n        score: c.data.score\n      }));\n  }\n} catch (error) {\n  // If comment parsing fails, continue with empty array\n  topComments = [];\n}\n\n// Format comments for Claude prompt\nconst commentsText = topComments.length > 0 \n  ? topComments.map((c, i) => `Comment ${i+1} (${c.score} points): ${c.body}`).join('\\n\\n')\n  : 'No comments available';\n\nreturn {\n  json: {\n    ...postData,\n    topComments: topComments,\n    commentsText: commentsText\n  }\n};"
+        "jsCode": "// Process comments and merge with post data\nconst postData = $('Extract Post Data').item.json;\nconst commentsResponse = $input.item.json;\n\nlet topComments = [];\nlet commentsText = 'No comments available';\n\ntry {\n  // Reddit returns array: [0] = post, [1] = comments\n  if (Array.isArray(commentsResponse) && commentsResponse[1]) {\n    topComments = commentsResponse[1].data.children\n      .filter(c => c.data && c.data.body && c.kind === 't1')\n      .slice(0, 5)\n      .map(c => ({\n        body: c.data.body,\n        score: c.data.score\n      }));\n    \n    // Format comments for Claude prompt\n    if (topComments.length > 0) {\n      commentsText = topComments\n        .map((c, i) => `Comment ${i+1} (${c.score} points): ${c.body}`)\n        .join('\\n\\n');\n    }\n  }\n} catch (error) {\n  // If comment parsing fails, continue with empty comments\n  console.log('Comment parsing error:', error.message);\n}\n\nreturn {\n  json: {\n    ...postData,\n    topComments: topComments,\n    commentsText: commentsText\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -358,7 +363,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse Claude response and format for Airtable\nconst claudeResponse = $input.item.json.content[0].text;\nconst postData = $input.item.json;\n\nlet analysis;\ntry {\n  // Remove markdown code blocks if present\n  const cleanedResponse = claudeResponse\n    .replace(/```json\\n?/g, '')\n    .replace(/```/g, '')\n    .trim();\n  \n  analysis = JSON.parse(cleanedResponse);\n} catch (error) {\n  // If parsing fails, create default structure\n  console.error('Failed to parse Claude response:', error);\n  analysis = {\n    mainProblem: 'Error parsing AI response',\n    contentIdeas: [{\n      title: postData.title,\n      format: 'Blog',\n      angle: 'General discussion',\n      hook: postData.title\n    }],\n    searchIntent: 'Informational',\n    emotionalTriggers: [],\n    targetAudience: 'General audience',\n    urgency: 5\n  };\n}\n\n// Create one record per content idea\nconst records = analysis.contentIdeas.map(idea => ({\n  json: {\n    contentTitle: idea.title,\n    contentFormat: idea.format,\n    contentAngle: idea.angle,\n    contentHook: idea.hook,\n    mainProblem: analysis.mainProblem,\n    searchIntent: analysis.searchIntent,\n    emotionalTriggers: Array.isArray(analysis.emotionalTriggers) \n      ? analysis.emotionalTriggers.join(', ') \n      : String(analysis.emotionalTriggers || ''),\n    targetAudience: analysis.targetAudience,\n    urgency: analysis.urgency,\n    sourceUrl: postData.permalink,\n    sourceTitle: postData.title,\n    subreddit: postData.subreddit,\n    score: postData.score,\n    numComments: postData.numComments,\n    created: postData.created,\n    status: 'Todo',\n    generatedAt: new Date().toISOString()\n  }\n}));\n\nreturn records;"
+        "jsCode": "// Parse Claude response and format for Airtable\nconst postData = $('Process Comments').item.json;\nconst claudeResponse = $input.item.json.content[0].text;\n\nlet analysis;\ntry {\n  // Remove markdown code blocks if present\n  const cleanedResponse = claudeResponse\n    .replace(/```json\\n?/g, '')\n    .replace(/```/g, '')\n    .trim();\n  \n  analysis = JSON.parse(cleanedResponse);\n} catch (error) {\n  // If parsing fails, create default structure\n  console.error('Failed to parse Claude response:', error);\n  analysis = {\n    mainProblem: 'Error parsing AI response',\n    contentIdeas: [{\n      title: postData.title,\n      format: 'Blog',\n      angle: 'General discussion',\n      hook: postData.title\n    }],\n    searchIntent: 'Informational',\n    emotionalTriggers: [],\n    targetAudience: 'General audience',\n    urgency: 5\n  };\n}\n\n// Create one record per content idea\nconst records = analysis.contentIdeas.map(idea => ({\n  json: {\n    contentTitle: idea.title,\n    contentFormat: idea.format,\n    contentAngle: idea.angle,\n    contentHook: idea.hook,\n    mainProblem: analysis.mainProblem,\n    searchIntent: analysis.searchIntent,\n    emotionalTriggers: Array.isArray(analysis.emotionalTriggers) \n      ? analysis.emotionalTriggers.join(', ') \n      : String(analysis.emotionalTriggers || ''),\n    targetAudience: analysis.targetAudience,\n    urgency: analysis.urgency,\n    sourceUrl: postData.permalink,\n    sourceTitle: postData.title,\n    subreddit: postData.subreddit,\n    score: postData.score,\n    numComments: postData.numComments,\n    created: postData.created,\n    status: 'Todo',\n    generatedAt: new Date().toISOString()\n  }\n}));\n\nreturn records;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -591,6 +596,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Loop Subreddits",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -687,7 +699,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "reddit-content-machine-v1",
+  "versionId": "reddit-content-machine-v1.1",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "reddit-content-machine-instance"
