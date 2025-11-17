@@ -1,0 +1,716 @@
+{
+  "name": "Reddit Content Machine",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        140,
+        300
+      ],
+      "id": "manual-trigger-1",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "cronExpression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        140,
+        500
+      ],
+      "id": "schedule-trigger-1",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "config-subreddits",
+              "name": "subreddits",
+              "value": "hyrox\ncrossfit\nrunning",
+              "type": "string"
+            },
+            {
+              "id": "config-minScore",
+              "name": "minScore",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "config-minComments",
+              "name": "minComments",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "config-postsPerSubreddit",
+              "name": "postsPerSubreddit",
+              "value": 25,
+              "type": "number"
+            },
+            {
+              "id": "config-timeRange",
+              "name": "timeRange",
+              "value": "week",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        360,
+        400
+      ],
+      "id": "config-node-1",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split subreddits by newline and return as array items\nconst subreddits = $input.item.json.subreddits\n  .split('\\n')\n  .map(s => s.trim())\n  .filter(s => s.length > 0);\n\nreturn subreddits.map(subreddit => ({\n  json: {\n    subreddit,\n    minScore: $input.item.json.minScore,\n    minComments: $input.item.json.minComments,\n    postsPerSubreddit: $input.item.json.postsPerSubreddit,\n    timeRange: $input.item.json.timeRange\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        400
+      ],
+      "id": "split-subreddits-1",
+      "name": "Split Subreddits"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        800,
+        400
+      ],
+      "id": "loop-subreddits-1",
+      "name": "Loop Subreddits"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.reddit.com/r/{{ $json.subreddit }}/top.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "t",
+              "value": "={{ $json.timeRange }}"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $json.postsPerSubreddit }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-reddit-scraper/1.0 (by /u/your_username)"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1020,
+        400
+      ],
+      "id": "fetch-reddit-posts-1",
+      "name": "Fetch Reddit Posts"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data.children",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        400
+      ],
+      "id": "split-posts-1",
+      "name": "Split Posts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-score",
+              "leftValue": "={{ $json.data.score }}",
+              "rightValue": "={{ $('Loop Subreddits').item.json.minScore }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "filter-comments",
+              "leftValue": "={{ $json.data.num_comments }}",
+              "rightValue": "={{ $('Loop Subreddits').item.json.minComments }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1460,
+        400
+      ],
+      "id": "filter-engagement-1",
+      "name": "Filter Engagement"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "extract-title",
+              "name": "title",
+              "value": "={{ $json.data.title }}",
+              "type": "string"
+            },
+            {
+              "id": "extract-score",
+              "name": "score",
+              "value": "={{ $json.data.score }}",
+              "type": "number"
+            },
+            {
+              "id": "extract-numComments",
+              "name": "numComments",
+              "value": "={{ $json.data.num_comments }}",
+              "type": "number"
+            },
+            {
+              "id": "extract-url",
+              "name": "url",
+              "value": "={{ $json.data.url }}",
+              "type": "string"
+            },
+            {
+              "id": "extract-permalink",
+              "name": "permalink",
+              "value": "=https://reddit.com{{ $json.data.permalink }}",
+              "type": "string"
+            },
+            {
+              "id": "extract-body",
+              "name": "body",
+              "value": "={{ $json.data.selftext || 'No text content' }}",
+              "type": "string"
+            },
+            {
+              "id": "extract-subreddit",
+              "name": "subreddit",
+              "value": "={{ $json.data.subreddit }}",
+              "type": "string"
+            },
+            {
+              "id": "extract-created",
+              "name": "created",
+              "value": "={{ new Date($json.data.created_utc * 1000).toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        400
+      ],
+      "id": "extract-post-data-1",
+      "name": "Extract Post Data"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.permalink }}.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-reddit-scraper/1.0 (by /u/your_username)"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "allowUnauthorizedCerts": false,
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        400
+      ],
+      "id": "fetch-comments-1",
+      "name": "Fetch Comments"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract top comments from Reddit API response\nconst commentData = $input.item.json;\nconst postData = $input.item.json;\n\nlet topComments = [];\n\ntry {\n  // Reddit returns array: [0] = post, [1] = comments\n  if (Array.isArray(commentData) && commentData[1]) {\n    topComments = commentData[1].data.children\n      .filter(c => c.data && c.data.body && c.kind === 't1')\n      .slice(0, 5)\n      .map(c => ({\n        body: c.data.body,\n        score: c.data.score\n      }));\n  }\n} catch (error) {\n  // If comment parsing fails, continue with empty array\n  topComments = [];\n}\n\n// Format comments for Claude prompt\nconst commentsText = topComments.length > 0 \n  ? topComments.map((c, i) => `Comment ${i+1} (${c.score} points): ${c.body}`).join('\\n\\n')\n  : 'No comments available';\n\nreturn {\n  json: {\n    ...postData,\n    topComments: topComments,\n    commentsText: commentsText\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        400
+      ],
+      "id": "process-comments-1",
+      "name": "Process Comments"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"temperature\": 0.3,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Analysiere diese Reddit-Diskussion und extrahiere Content-Ideen.\\n\\n**Post:**\\nTitel: {{ $json.title }}\\nSubreddit: r/{{ $json.subreddit }}\\nScore: {{ $json.score }}\\nComments: {{ $json.numComments }}\\n\\nText:\\n{{ $json.body }}\\n\\n**Top Comments:**\\n{{ $json.commentsText }}\\n\\n---\\n\\nExtrahiere im JSON-Format:\\n\\n{\\n  \\\"mainProblem\\\": \\\"Kernproblem/Schmerzpunkt\\\",\\n  \\\"contentIdeas\\\": [\\n    {\\n      \\\"title\\\": \\\"Content-Titel\\\",\\n      \\\"format\\\": \\\"Blog/Video/Social/Thread\\\",\\n      \\\"angle\\\": \\\"Unique Perspective\\\",\\n      \\\"hook\\\": \\\"Aufmerksamkeits-Hook\\\"\\n    }\\n  ],\\n  \\\"searchIntent\\\": \\\"Informational/Commercial/Transactional\\\",\\n  \\\"emotionalTriggers\\\": [\\\"Frustration\\\", \\\"FOMO\\\"],\\n  \\\"targetAudience\\\": \\\"Wer ist betroffen?\\\",\\n  \\\"urgency\\\": 1-10\\n}\\n\\nNur JSON ausgeben.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        400
+      ],
+      "id": "claude-analysis-1",
+      "name": "Claude Analysis",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude response and format for Airtable\nconst claudeResponse = $input.item.json.content[0].text;\nconst postData = $input.item.json;\n\nlet analysis;\ntry {\n  // Remove markdown code blocks if present\n  const cleanedResponse = claudeResponse\n    .replace(/```json\\n?/g, '')\n    .replace(/```/g, '')\n    .trim();\n  \n  analysis = JSON.parse(cleanedResponse);\n} catch (error) {\n  // If parsing fails, create default structure\n  console.error('Failed to parse Claude response:', error);\n  analysis = {\n    mainProblem: 'Error parsing AI response',\n    contentIdeas: [{\n      title: postData.title,\n      format: 'Blog',\n      angle: 'General discussion',\n      hook: postData.title\n    }],\n    searchIntent: 'Informational',\n    emotionalTriggers: [],\n    targetAudience: 'General audience',\n    urgency: 5\n  };\n}\n\n// Create one record per content idea\nconst records = analysis.contentIdeas.map(idea => ({\n  json: {\n    contentTitle: idea.title,\n    contentFormat: idea.format,\n    contentAngle: idea.angle,\n    contentHook: idea.hook,\n    mainProblem: analysis.mainProblem,\n    searchIntent: analysis.searchIntent,\n    emotionalTriggers: Array.isArray(analysis.emotionalTriggers) \n      ? analysis.emotionalTriggers.join(', ') \n      : String(analysis.emotionalTriggers || ''),\n    targetAudience: analysis.targetAudience,\n    urgency: analysis.urgency,\n    sourceUrl: postData.permalink,\n    sourceTitle: postData.title,\n    subreddit: postData.subreddit,\n    score: postData.score,\n    numComments: postData.numComments,\n    created: postData.created,\n    status: 'Todo',\n    generatedAt: new Date().toISOString()\n  }\n}));\n\nreturn records;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        400
+      ],
+      "id": "format-output-1",
+      "name": "Format Output"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Content Title": "={{ $json.contentTitle }}",
+            "Format": "={{ $json.contentFormat }}",
+            "Angle": "={{ $json.contentAngle }}",
+            "Hook": "={{ $json.contentHook }}",
+            "Main Problem": "={{ $json.mainProblem }}",
+            "Search Intent": "={{ $json.searchIntent }}",
+            "Emotional Triggers": "={{ $json.emotionalTriggers }}",
+            "Target Audience": "={{ $json.targetAudience }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Source URL": "={{ $json.sourceUrl }}",
+            "Source Title": "={{ $json.sourceTitle }}",
+            "Subreddit": "={{ $json.subreddit }}",
+            "Engagement Score": "={{ $json.score }}",
+            "Comments": "={{ $json.numComments }}",
+            "Status": "={{ $json.status }}",
+            "Created": "={{ $json.created }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2780,
+        400
+      ],
+      "id": "save-to-airtable-1",
+      "name": "Save to Airtable",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "airtable-api-key",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Reddit Content Machine\n\n## Workflow Overview\nThis workflow automatically mines Reddit discussions to generate content ideas:\n1. Configure target subreddits and quality thresholds\n2. Fetch top posts from each subreddit\n3. Filter by engagement (score + comments)\n4. Analyze with Claude AI\n5. Save structured content ideas to Airtable\n\n## Setup Required\n- Anthropic API key (Claude)\n- Airtable Personal Access Token\n- Airtable Base & Table configured\n\n## Configuration\nEdit the Config node to customize:\n- subreddits: List of subreddits (one per line)\n- minScore: Minimum upvotes (default: 50)\n- minComments: Minimum comments (default: 10)\n- postsPerSubreddit: Posts to fetch (default: 25)\n- timeRange: week/month/year/all",
+        "height": 780,
+        "width": 480,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        40,
+        100
+      ],
+      "id": "sticky-note-overview",
+      "name": "Sticky Note - Overview"
+    },
+    {
+      "parameters": {
+        "content": "## Triggers\n\n**Manual:** Test runs\n**Schedule:** Daily at 9am",
+        "height": 280,
+        "width": 280,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        80,
+        220
+      ],
+      "id": "sticky-note-triggers",
+      "name": "Sticky Note - Triggers"
+    },
+    {
+      "parameters": {
+        "content": "## Config & Loop\n\nConfigure subreddits and parameters, then loop through each subreddit",
+        "height": 220,
+        "width": 520,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "id": "sticky-note-config",
+      "name": "Sticky Note - Config"
+    },
+    {
+      "parameters": {
+        "content": "## Fetch & Filter\n\nFetch Reddit posts, split into individual items, and filter by engagement metrics",
+        "height": 220,
+        "width": 700,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "id": "sticky-note-fetch",
+      "name": "Sticky Note - Fetch"
+    },
+    {
+      "parameters": {
+        "content": "## Extract & Enrich\n\nExtract post data, fetch top comments for additional context",
+        "height": 220,
+        "width": 520,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        260
+      ],
+      "id": "sticky-note-extract",
+      "name": "Sticky Note - Extract"
+    },
+    {
+      "parameters": {
+        "content": "## AI Analysis\n\nClaude analyzes the discussion and generates structured content ideas with pain points, angles, and urgency scores",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2300,
+        260
+      ],
+      "id": "sticky-note-analysis",
+      "name": "Sticky Note - Analysis"
+    },
+    {
+      "parameters": {
+        "content": "## Save Results\n\nFormat and save content ideas to Airtable for review and content planning",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        260
+      ],
+      "id": "sticky-note-save",
+      "name": "Sticky Note - Save"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Split Subreddits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Subreddits": {
+      "main": [
+        [
+          {
+            "node": "Loop Subreddits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Subreddits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reddit Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Posts": {
+      "main": [
+        [
+          {
+            "node": "Split Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Posts": {
+      "main": [
+        [
+          {
+            "node": "Filter Engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Engagement": {
+      "main": [
+        [
+          {
+            "node": "Extract Post Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Post Data": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Comments": {
+      "main": [
+        [
+          {
+            "node": "Process Comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Comments": {
+      "main": [
+        [
+          {
+            "node": "Claude Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Analysis": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Save to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "reddit-content-machine-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "reddit-content-machine-instance"
+  },
+  "id": "RedditContentMachine",
+  "tags": [
+    {
+      "createdAt": "2025-11-17T00:00:00.000Z",
+      "updatedAt": "2025-11-17T00:00:00.000Z",
+      "id": "content-automation",
+      "name": "content-automation"
+    },
+    {
+      "createdAt": "2025-11-17T00:00:00.000Z",
+      "updatedAt": "2025-11-17T00:00:00.000Z",
+      "id": "reddit",
+      "name": "reddit"
+    },
+    {
+      "createdAt": "2025-11-17T00:00:00.000Z",
+      "updatedAt": "2025-11-17T00:00:00.000Z",
+      "id": "ai-powered",
+      "name": "ai-powered"
+    }
+  ]
+}
